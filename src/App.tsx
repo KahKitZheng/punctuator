@@ -57,6 +57,21 @@ function App() {
     (event: DragEndEvent) => {
       const { active, over } = event;
 
+      setIsSomethingDragged(false);
+
+      // update position of the punctuation and lowercase the next word
+      // Note: might be better to compare it to the original text, because you might not always want to lowercase the word in case of names and places
+      if (!over?.id || answer[active.data.current?.wordIndex]) {
+        answer[active.data.current?.wordIndex].punctuation = null;
+
+        answer[active.data.current?.wordIndex + 1].word =
+          answer[active.data.current?.wordIndex + 1].word
+            .charAt(0)
+            .toLowerCase() +
+          answer[active.data.current?.wordIndex + 1].word.slice(1);
+      }
+
+      // if we are not dragging above a dropzone, then do nothing
       if (!over?.id) {
         return setIsSomethingDragged(false);
       }
@@ -77,7 +92,6 @@ function App() {
       }
 
       setAnswer([...answer]);
-      setIsSomethingDragged(false);
     },
     [answer],
   );
@@ -93,7 +107,7 @@ function App() {
   return (
     <div className="m-auto flex h-dvh max-w-2xl flex-col justify-center gap-8">
       <header className="flex items-center justify-between gap-4">
-        <p className="text-2xl font-bold">Practice time</p>
+        <p className="text-2xl font-bold">Practice time 🧐</p>
       </header>
       <DndContext
         sensors={sensors}
@@ -111,7 +125,7 @@ function App() {
               id={index.toString()}
               word={word}
               index={index}
-              isDragging={!!isSomethingDragged}
+              isSomethingDragged={!!isSomethingDragged}
             />
           ))}
         </div>
@@ -149,28 +163,52 @@ function App() {
   );
 }
 
-type SortableItemProps = {
+type WordProps = {
   id: string;
   word: Word;
   index: number;
-  isDragging: boolean; // item in general, not this specific item
+  isSomethingDragged: boolean; // item in general, not this specific item
 };
 
-const Word = (props: SortableItemProps) => {
-  const { setNodeRef: droppableRef } = useDroppable({ id: props.id });
+const Word = (props: WordProps) => {
+  const {
+    setNodeRef: draggableRef,
+    attributes,
+    listeners,
+    transform,
+  } = useDraggable({
+    id: `${props.index}-${props.word.punctuation}`,
+    data: {
+      wordIndex: props.index,
+      punctuation: props.word.punctuation,
+    },
+  });
+  const { setNodeRef: droppableRef } = useDroppable({
+    id: props.id,
+  });
 
   return (
     <div className="flex">
       <p>{props.word?.word}</p>
       <p
         style={{
-          borderBottom: props.isDragging
+          borderBottom: props.isSomethingDragged
             ? "2px solid #fb923c"
             : "2px solid transparent",
-          color: props.isDragging ? "#c2410c" : undefined,
+          color: props.isSomethingDragged ? "#c2410c" : undefined,
           marginRight: props.word.punctuation ? "8px" : "",
+          transform: props.word.punctuation
+            ? CSS.Transform.toString(transform)
+            : undefined,
         }}
-        ref={droppableRef}
+        ref={
+          // if nothing is filled or you update a punctuation, then it's a droppable otherwise it's a draggable
+          !props.word.punctuation || props.isSomethingDragged
+            ? droppableRef
+            : draggableRef
+        }
+        {...attributes}
+        {...listeners}
       >
         {props.word.punctuation ? (
           <span className="grid h-fit w-4 place-content-center rounded border-b-orange-400 bg-orange-100 text-orange-700">
