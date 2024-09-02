@@ -22,8 +22,30 @@ type Word = {
 function App() {
   const availablePunctuations = [",", ".", "?", "!"];
 
+  const punctuationCountInit = availablePunctuations.reduce(
+    (acc, punctuation) => {
+      acc[punctuation] = {
+        example: exampleText.split(punctuation).length - 1,
+        answer: 0,
+      };
+      return acc;
+    },
+    {} as Record<string, { example: number; answer: number }>,
+  );
+
   const [answer, setAnswer] = useState<Word[]>(textWithoutFormat(exampleText));
   const [isSomethingDragged, setIsSomethingDragged] = useState(false);
+  const [punctuationCount, setPunctuationCount] =
+    useState(punctuationCountInit);
+  const [answerState, setAnswerState] = useState("in-progress");
+
+  const isEveryPunctuationFilled = Object.keys(punctuationCount).every(
+    (punctuation) =>
+      punctuationCount[punctuation].answer ===
+      punctuationCount[punctuation].example,
+  )
+    ? false
+    : true;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -69,6 +91,16 @@ function App() {
             .charAt(0)
             .toLowerCase() +
           answer[active.data.current?.wordIndex + 1].word.slice(1);
+
+        if (event.active.data.current?.punctuation) {
+          setPunctuationCount((prev) => ({
+            ...prev,
+            [event.active.data.current?.punctuation]: {
+              ...prev[event.active.data.current?.punctuation],
+              answer: prev[event.active.data.current?.punctuation].answer - 1,
+            },
+          }));
+        }
       }
 
       // if we are not dragging above a dropzone, then do nothing
@@ -81,7 +113,16 @@ function App() {
       const word = answer[dropzoneId];
       const nextWord = answer[dropzoneId + 1];
 
-      word.punctuation = active.data.current?.punctuation;
+      if (event.active.data.current?.punctuation && !word.punctuation) {
+        word.punctuation = active.data.current?.punctuation;
+        setPunctuationCount((prev) => ({
+          ...prev,
+          [event.active.data.current?.punctuation]: {
+            ...prev[event.active.data.current?.punctuation],
+            answer: prev[event.active.data.current?.punctuation].answer + 1,
+          },
+        }));
+      }
 
       if (
         nextWord &&
@@ -101,11 +142,11 @@ function App() {
       .map((word) => word.word + (word.punctuation ?? ""))
       .join(" ");
 
-    console.log(answerText, exampleText, answerText === exampleText);
+    setAnswerState(answerText === exampleText ? "correct" : "incorrect");
   }
 
   return (
-    <div className="m-auto flex h-dvh max-w-2xl flex-col justify-center gap-8">
+    <div className="m-auto flex h-dvh max-w-3xl flex-col justify-center gap-8">
       <header className="flex items-center justify-between gap-4">
         <p className="text-2xl font-bold">Practice time 🧐</p>
       </header>
@@ -131,14 +172,19 @@ function App() {
         </div>
 
         <div className="flex justify-between">
-          <div className="grid w-fit grid-cols-4 gap-2">
-            {availablePunctuations.map((symbol) => (
-              <InsertSymbol
-                key={symbol}
-                symbol={symbol}
-                onClick={() => setIsSomethingDragged(true)}
-              />
-            ))}
+          <div className="grid w-fit grid-cols-4 gap-4">
+            {Object.keys(punctuationCount)
+              .filter(
+                (punctuation) => punctuationCount[punctuation].example > 0,
+              )
+              .map((symbol) => (
+                <InsertSymbol
+                  key={symbol}
+                  symbol={symbol}
+                  usedPunctuations={punctuationCount}
+                  onClick={() => setIsSomethingDragged(true)}
+                />
+              ))}
           </div>
           <div className="flex items-center gap-6">
             <button
@@ -146,18 +192,32 @@ function App() {
               onClick={() => {
                 setAnswer(textWithoutFormat(exampleText));
                 setIsSomethingDragged(false);
+                setPunctuationCount(punctuationCountInit);
+                setAnswerState("in-progress");
               }}
             >
               reset
             </button>
             <button
-              className="h-[32px] w-fit rounded bg-slate-900 px-4 text-sm text-slate-100"
+              className="h-[32px] w-fit rounded bg-slate-900 px-4 text-sm text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={submitAnswer}
+              disabled={isEveryPunctuationFilled}
             >
               submit
             </button>
           </div>
         </div>
+
+        {answerState === "correct" && (
+          <p className="-mx-4 rounded bg-green-200 px-4 py-2 text-sm text-green-500">
+            Correct! ✅
+          </p>
+        )}
+        {answerState === "incorrect" && (
+          <p className="-mx-4 rounded bg-red-200 px-4 py-2 text-sm text-red-500">
+            Incorrect! ❌
+          </p>
+        )}
       </DndContext>
     </div>
   );
@@ -224,6 +284,7 @@ const Word = (props: WordProps) => {
 
 type SymbolProps = {
   symbol: string;
+  usedPunctuations: Record<string, { example: number; answer: number }>;
   onClick: () => void;
 };
 
@@ -236,16 +297,26 @@ const InsertSymbol = (props: SymbolProps) => {
     },
   });
 
+  const isDisabled =
+    props.usedPunctuations[symbol].answer ===
+    props.usedPunctuations[symbol].example;
+
   return (
-    <button
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      style={{ transform: CSS.Transform.toString(transform) }}
-      className="grid aspect-square w-8 place-content-center rounded bg-slate-900 p-1 text-sm text-slate-100 shadow duration-150 hover:scale-110"
-    >
-      {symbol}
-    </button>
+    <div className="flex items-center gap-1 text-sm">
+      <p>{`${props.usedPunctuations[symbol].answer}/${props.usedPunctuations[symbol].example}`}</p>
+      <button
+        ref={setNodeRef}
+        {...(!isDisabled && attributes)}
+        {...(!isDisabled && listeners)}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          opacity: isDisabled ? 0.25 : 1,
+        }}
+        className="grid aspect-square w-8 place-content-center rounded bg-slate-900 p-1 text-sm text-slate-100 shadow duration-150 hover:scale-110"
+      >
+        {symbol}
+      </button>
+    </div>
   );
 };
 
